@@ -1,3 +1,6 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
 name: GitOps CI/CD Workflow
 
 on:
@@ -31,7 +34,9 @@ jobs:
     
     - name: Lint with flake8
       run: |
+        # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     
     - name: Test with pytest
@@ -58,26 +63,14 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
       
-    - name: Build and push v1 image
+    - name: Build and push
       uses: docker/build-push-action@v5
       with:
         context: ./app 
         file: ./app/Dockerfile
         builder: ${{ steps.buildx.outputs.name }}
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/hello-gitops:v1
-        platforms: linux/amd64,linux/arm64
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache
-
-    - name: Build and push v2 image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./app 
-        file: ./app/Dockerfile
-        builder: ${{ steps.buildx.outputs.name }}
-        push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/hello-gitops:v2
+        tags: ${{ secrets.DOCKER_USERNAME }}/hello-gitops:${{ github.sha }}, ${{ secrets.DOCKER_USERNAME }}/hello-gitops:latest
         platforms: linux/amd64,linux/arm64
         cache-from: type=local,src=/tmp/.buildx-cache
         cache-to: type=local,dest=/tmp/.buildx-cache
@@ -97,42 +90,22 @@ jobs:
       with:
         kustomize-version: "3.6.1"
 
-    - name: Update Kubernetes resources for v1
+    - name: Update Kubernetes resources
       env:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       run: |
-        cd k8s
-        kustomize edit set namespace hello-gitops
-        kustomize edit set image hello-gitops=$DOCKER_USERNAME/hello-gitops:v1
-        cat kustomization.yaml
+       cd k8s
+       kustomize edit set namespace hello-gitops
+       kustomize edit set image hello-gitops=$DOCKER_USERNAME/hello-gitops:$GITHUB_SHA
+       cat kustomization.yaml
         
-    - name: Commit files for v1
+    - name: Commit files
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git commit -am "Deploy v1 image"
+        git commit -am "Bump docker tag"
 
-    - name: Push changes for v1
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Update Kubernetes resources for v2
-      env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-      run: |
-        cd k8s
-        kustomize edit set namespace hello-gitops
-        kustomize edit set image hello-gitops=$DOCKER_USERNAME/hello-gitops:v2
-        cat kustomization.yaml
-
-    - name: Commit files for v2
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git commit -am "Deploy v2 image"
-
-    - name: Push changes for v2
+    - name: Push changes
       uses: ad-m/github-push-action@master
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
